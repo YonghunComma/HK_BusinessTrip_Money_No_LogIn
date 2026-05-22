@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <!-- iOS 및 모바일 뷰포트 최적화 (확대 방지 및 Safe Area 사용) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>스마트 출장비 정산기</title>
+  
+  <!-- iOS 전용 Progressive Web App (PWA) 메타 태그 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="출장비 정산">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* iOS 시스템 서체 및 터치 감성 커스텀 */
+    body {
+      -webkit-tap-highlight-color: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    input {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    /* iOS 세이프 에어리어 대응 패딩 및 높이 처리 */
+    .safe-top {
+      padding-top: max(1rem, env(safe-area-inset-top));
+    }
+    .safe-bottom {
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+  </style>
+</head>
+<body class="bg-[#f2f2f7] text-slate-900 min-h-screen flex flex-col justify-between">
+
+  <!-- 상단 내비게이션 바 (iOS 스타일 Glassmorphism) -->
+  <header class="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/50 px-4 pb-3 safe-top">
+    <div class="max-w-md mx-auto flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-[#007aff] rounded-lg flex items-center justify-center text-white shadow-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h1.5A1.5 1.5 0 0118 13.5v1a1.5 1.5 0 01-1.5 1.5H13m-2.5-3.5v5.5m-1-3h8"></path>
+          </svg>
+        </div>
+        <h1 class="text-lg font-semibold tracking-tight text-slate-900">출장비 정산기</h1>
+      </div>
+      <div class="flex gap-2">
+        <!-- iOS 시스템 아웃라인 스타일 버튼 -->
+        <button onclick="exportData()" class="p-1.5 text-[#007aff] hover:bg-slate-100 rounded-lg transition" title="데이터 내보내기">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+        </button>
+        <button onclick="triggerImport()" class="p-1.5 text-[#007aff] hover:bg-slate-100 rounded-lg transition" title="데이터 가져오기">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        </button>
+        <input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
+      </div>
+    </div>
+  </header>
+
+  <!-- 메인 스크롤 콘텐츠 -->
+  <main class="max-w-md mx-auto w-full px-4 mt-4 space-y-5 flex-grow">
+
+    <!-- 알림 메시지 토스트 -->
+    <div id="toast" class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur-sm text-white text-xs px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 transition-all duration-300">
+      <span id="toastMessage">알림 내용</span>
+    </div>
+
+    <!-- 1. iOS 스타일 기본 설정 세션 (Grouped Table) -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/50">
+      <div class="flex justify-between items-center mb-3.5">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">출장 예산 설정</h2>
+        <span class="text-[10px] text-[#007aff] font-bold bg-[#007aff]/10 px-2 py-0.5 rounded-full">실시간 반영</span>
+      </div>
+
+      <div class="space-y-4">
+        <!-- 외화 종류 선택 (iOS Segmented Control 디자인) -->
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1.5">외화 통화</label>
+          <div class="bg-slate-100 p-0.5 rounded-lg flex w-full">
+            <button onclick="setCurrency('엔', 'JPY')" id="btn-jpy" class="currency-btn flex-1 py-1 text-xs font-bold rounded-md transition duration-200">JPY (엔)</button>
+            <button onclick="setCurrency('달러', 'USD')" id="btn-usd" class="currency-btn flex-1 py-1 text-xs font-bold rounded-md transition duration-200">USD (달러)</button>
+            <button onclick="setCurrency('유로', 'EUR')" id="btn-eur" class="currency-btn flex-1 py-1 text-xs font-bold rounded-md transition duration-200">EUR (유로)</button>
+            <button onclick="setCurrency('위안', 'CNY')" id="btn-cny" class="currency-btn flex-1 py-1 text-xs font-bold rounded-md transition duration-200">CNY (위안)</button>
+          </div>
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-xs font-medium text-slate-400 shrink-0">기타 입력:</span>
+            <input type="text" id="customCurrency" placeholder="기타 통화명 직접 입력 (예: 바트)" oninput="setCustomCurrency(this.value)" class="w-full px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-[#007aff] focus:bg-white transition">
+          </div>
+        </div>
+
+        <!-- 일당 및 비율 -->
+        <div class="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">기본 일당 (<span class="currency-label">엔</span>)</label>
+            <input type="number" id="dailyAllowance" value="55000" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition" placeholder="0">
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">지급 비율 (%)</label>
+            <input type="number" id="allowanceRatio" value="90" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition" placeholder="90">
+          </div>
+        </div>
+
+        <!-- 환율 및 기간 -->
+        <div class="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+          <div>
+            <div class="flex justify-between items-center mb-1">
+              <label class="block text-[11px] font-semibold text-slate-500">적용 환율 (원/<span class="currency-label">엔</span>)</label>
+              <button onclick="autoFetchRate()" id="btnFetchRate" class="text-[10px] text-[#007aff] bg-[#007aff]/5 hover:bg-[#007aff]/10 px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 transition-all" title="네이버 환율 기준 자동 연동">
+                <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17"></path>
+                </svg>
+                불러오기
+              </button>
+            </div>
+            <input type="number" step="any" id="exchangeRate" value="9.2928" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition" placeholder="0.00">
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1">출장 기간 (일수)</label>
+            <input type="number" id="tripDays" value="5" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition" placeholder="1">
+          </div>
+        </div>
+      </div>
+
+      <!-- 계산 결과 요약 -->
+      <div class="mt-4 pt-3.5 border-t border-dashed border-slate-200 grid grid-cols-2 gap-2 text-center text-xs">
+        <div class="bg-slate-50 p-2.5 rounded-xl">
+          <p class="text-slate-500 font-medium mb-0.5">적용 일당 (외화)</p>
+          <p class="font-bold text-slate-900 text-sm"><span id="summaryDailyForeign">49,500</span> <span class="currency-label">엔</span></p>
+        </div>
+        <div class="bg-[#007aff]/5 p-2.5 rounded-xl">
+          <p class="text-[#007aff] font-bold mb-0.5">적용 일당 (원화)</p>
+          <p class="font-bold text-[#007aff] text-sm"><span id="summaryDailyKRW">459,994</span> 원</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 실시간 대시보드 (iOS 스타일 대시보드 링/수치 카드) -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/50">
+      <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3.5">지출 및 잔액 대시보드</h2>
+
+      <!-- 예산 사용 게이지 바 (iOS-like Blue & Gray) -->
+      <div class="mb-5 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
+        <div class="flex justify-between items-baseline mb-1.5">
+          <span class="text-xs font-bold text-slate-500">남은 예산 비율</span>
+          <span class="text-2xl font-black tracking-tight text-[#007aff]" id="remainingPercent">100%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+          <div id="remainingProgressBar" class="bg-[#007aff] h-full rounded-full transition-all duration-500" style="width: 100%;"></div>
+        </div>
+      </div>
+
+      <!-- 대시보드 리스트 -->
+      <div class="space-y-3">
+        <!-- 총 예산 -->
+        <div class="flex justify-between items-center py-2.5 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 bg-slate-300 rounded-full"></span>
+            <span class="text-xs font-bold text-slate-600">총 출장 예산</span>
+          </div>
+          <div class="text-right">
+            <p class="font-bold text-slate-950 text-sm"><span id="totalBudgetForeign">0</span> <span class="currency-label">엔</span></p>
+            <p class="text-[10px] text-slate-400"><span id="totalBudgetKRW">0</span> 원</p>
+          </div>
+        </div>
+
+        <!-- 사용한 금액 -->
+        <div class="flex justify-between items-center py-2.5 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 bg-[#ff3b30] rounded-full"></span>
+            <span class="text-xs font-bold text-slate-600">총 사용 금액</span>
+          </div>
+          <div class="text-right">
+            <p class="font-bold text-[#ff3b30] text-sm"><span id="totalSpentForeign">0</span> <span class="currency-label">엔</span></p>
+            <p class="text-[10px] text-[#ff3b30]/70"><span id="totalSpentKRW">0</span> 원</p>
+          </div>
+        </div>
+
+        <!-- 남은 금액 -->
+        <div class="flex justify-between items-center py-2.5">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 bg-[#34c759] rounded-full"></span>
+            <span class="text-xs font-bold text-slate-600">남은 예산 잔액</span>
+          </div>
+          <div class="text-right">
+            <p class="font-black text-[#34c759] text-base"><span id="totalRemainingForeign">0</span> <span class="currency-label">엔</span></p>
+            <p class="text-[10px] text-[#34c759] font-semibold"><span id="totalRemainingKRW">0</span> 원</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 지출 항목 등록 (iOS Card Form) -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/50">
+      <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3.5">지출 내역 등록</h2>
+
+      <div class="space-y-4">
+        <!-- 사용 화폐 선택 토글 (iOS Segmented Control형) -->
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1.5">지출 화폐</label>
+          <div class="bg-slate-100 p-0.5 rounded-lg flex w-full">
+            <button onclick="setExpenseCurrency('KRW')" id="exp-krw-btn" class="flex-1 py-1 text-xs font-bold rounded-md transition duration-200">
+              원화 (KRW) 지출
+            </button>
+            <button onclick="setExpenseCurrency('FOREIGN')" id="exp-foreign-btn" class="flex-1 py-1 text-xs font-bold rounded-md transition duration-200">
+              외화 (<span class="currency-label">엔</span>) 지출
+            </button>
+          </div>
+        </div>
+
+        <!-- 지출 카테고리 -->
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1.5">카테고리</label>
+          <div class="grid grid-cols-5 gap-1.5" id="categoryGroup">
+            <button type="button" onclick="setCategory('식비')" class="cat-btn py-1.5 text-xs rounded-lg font-semibold transition duration-200">식비</button>
+            <button type="button" onclick="setCategory('교통')" class="cat-btn py-1.5 text-xs rounded-lg font-semibold transition duration-200">교통</button>
+            <button type="button" onclick="setCategory('숙박')" class="cat-btn py-1.5 text-xs rounded-lg font-semibold transition duration-200">숙박</button>
+            <button type="button" onclick="setCategory('쇼핑')" class="cat-btn py-1.5 text-xs rounded-lg font-semibold transition duration-200">쇼핑</button>
+            <button type="button" onclick="setCategory('기타')" class="cat-btn py-1.5 text-xs rounded-lg font-semibold transition duration-200">기타</button>
+          </div>
+        </div>
+
+        <!-- 날짜 및 내역 및 금액 (iOS 모바일 최적화 배치) -->
+        <div class="space-y-3.5">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">사용 날짜</label>
+              <input type="date" id="expenseDate" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">사용 내역</label>
+              <input type="text" id="expenseDesc" placeholder="예: 택시비" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">지출 금액 (<span id="expenseCurrencyLabel">원</span>)</label>
+            <input type="number" id="expenseAmount" placeholder="0" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#007aff] focus:bg-white transition">
+          </div>
+        </div>
+
+        <!-- iOS 스타일의 꽉 찬 블루 액션 버튼 -->
+        <button onclick="addExpense()" class="w-full mt-2 bg-[#007aff] hover:bg-[#0062cc] active:scale-[0.98] text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+          지출 내역 등록
+        </button>
+      </div>
+    </section>
+
+    <!-- 4. 지출 리스트 (iOS Table View) -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/50">
+      <div class="flex justify-between items-center mb-3.5">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">지출 내역 목록</h2>
+        <button onclick="clearAllExpenses()" class="text-xs text-[#ff3b30] font-bold active:scale-95 transition">전체 삭제</button>
+      </div>
+
+      <!-- 리스트 컨테이너 -->
+      <div id="expenseList" class="divide-y divide-slate-100 max-h-[320px] overflow-y-auto no-scrollbar">
+        <!-- 동적으로 지출 리스트가 들어옵니다. -->
+        <p id="emptyMessage" class="text-center text-xs text-slate-400 py-8">등록된 지출 내역이 없습니다.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- iOS 하단 가이드 배너 (Safari "홈 화면에 추가" 안내) -->
+  <section id="pwaBanner" class="bg-white border-t border-slate-200/70 py-4 px-5 shadow-[0_-5px_15px_rgba(0,0,0,0.05)] safe-bottom hidden">
+    <div class="max-w-md mx-auto flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-[#007aff] rounded-xl flex items-center justify-center text-white shadow-sm flex-shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h1.5A1.5 1.5 0 0118 13.5v1a1.5 1.5 0 01-1.5 1.5H13m-2.5-3.5v5.5m-1-3h8"></path>
+          </svg>
+        </div>
+        <div class="text-left">
+          <p class="text-xs font-bold text-slate-950">아이폰 앱으로 바로 설치하기</p>
+          <p class="text-[10px] text-slate-500 mt-0.5">Safari 공유 버튼을 누른 후 <strong class="text-slate-800">"홈 화면에 추가"</strong>를 누르세요.</p>
+        </div>
+      </div>
+      <button onclick="dismissPwaBanner()" class="text-slate-400 hover:text-slate-600 p-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- iOS 스타일 하단 액션 시트 모달 (Action Sheet) -->
+  <div id="confirmModal" class="hidden fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-xs flex items-end justify-center p-4 transition-all duration-300">
+    <div id="confirmModalContent" class="bg-slate-100 rounded-2xl max-w-sm w-full p-3.5 shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300">
+      <div class="bg-white rounded-xl overflow-hidden divide-y divide-slate-100">
+        <div class="px-4 py-3.5 text-center">
+          <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wide">지출 내역 초기화</h3>
+          <p class="text-sm text-slate-800 mt-1">모든 지출 내역을 정말 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.</p>
+        </div>
+        <button onclick="closeConfirmModal(true)" class="w-full py-3.5 text-sm font-bold text-[#ff3b30] hover:bg-slate-50 active:bg-slate-100 transition-all block text-center">
+          전체 삭제
+        </button>
+      </div>
+      <div class="mt-2">
+        <button onclick="closeConfirmModal(false)" class="w-full bg-white py-3.5 rounded-xl text-sm font-bold text-[#007aff] hover:bg-slate-50 active:bg-slate-100 transition-all block text-center shadow-sm">
+          취소
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- State 관리 ---
+    let state = {
+      currencyName: '엔',
+      currencyCode: 'JPY',
+      dailyAllowance: 55000,
+      allowanceRatio: 90,
+      exchangeRate: 9.2928,
+      tripDays: 5,
+      expenses: [], // { id, date, category, desc, currencyType('KRW'|'FOREIGN'), amount }
+      currentExpenseCurrency: 'KRW', // 지출 입력 폼 선택 화폐
+      currentCategory: '식비'
+    };
+
+    // 로컬 스토리지 키
+    const STORAGE_KEY = 'TRIP_BUDGET_APP_STATE';
+    const BANNER_DISMISS_KEY = 'PWA_BANNER_DISMISSED';
+    let confirmResolve = null;
+
+    // 초기 실행
+    window.onload = function() {
+      loadState();
+      checkPwaBanner();
+      setDefaultDate();
+      updateUI();
+    };
+
+    // --- 오늘 날짜 기본 지정 헬퍼 ---
+    function setDefaultDate() {
+      const localDate = new Date();
+      const year = localDate.getFullYear();
+      const month = String(localDate.getMonth() + 1).padStart(2, '0');
+      const day = String(localDate.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+      document.getElementById('expenseDate').value = todayStr;
+    }
+
+    // --- 데이터 로드 & 세이브 ---
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          state = { ...state, ...parsed };
+          
+          // 설정 인풋 복구
+          document.getElementById('dailyAllowance').value = state.dailyAllowance;
+          document.getElementById('allowanceRatio').value = state.allowanceRatio;
+          document.getElementById('exchangeRate').value = state.exchangeRate;
+          document.getElementById('tripDays').value = state.tripDays;
+          
+          // 외화 버튼 활성화 복구
+          updateCurrencySelectionUI();
+        } catch (e) {
+          console.error("데이터 로딩 오류, 기본값을 사용합니다.");
+        }
+      }
+    }
+
+    // --- iOS PWA 배너 체크 ---
+    function checkPwaBanner() {
+      const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+      const isDismissed = localStorage.getItem(BANNER_DISMISS_KEY) === 'true';
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+      if (isiOS && !isStandalone && !isDismissed) {
+        document.getElementById('pwaBanner').classList.remove('hidden');
+      }
+    }
+
+    function dismissPwaBanner() {
+      localStorage.setItem(BANNER_DISMISS_KEY, 'true');
+      document.getElementById('pwaBanner').classList.add('hidden');
+    }
+
+    // --- 알림 (Toast) 기능 ---
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toastMessage');
+      toastMessage.innerText = message;
+      toast.classList.remove('hidden');
+      toast.classList.add('animate-bounce');
+      
+      setTimeout(() => {
+        toast.classList.add('hidden');
+        toast.classList.remove('animate-bounce');
+      }, 2000);
+    }
+
+    // --- 외화 및 입력 정보 변경 처리 ---
+    function setCurrency(name, code) {
+      state.currencyName = name;
+      state.currencyCode = code;
+      document.getElementById('customCurrency').value = '';
+      updateCurrencySelectionUI();
+      calculateBudget();
+    }
+
+    function setCustomCurrency(value) {
+      if(value.trim() !== "") {
+        state.currencyName = value;
+        state.currencyCode = 'CUSTOM';
+        // 버튼 스타일 리셋
+        document.querySelectorAll('.currency-btn').forEach(btn => {
+          btn.className = "currency-btn flex-1 py-1 text-xs font-bold rounded-md transition text-slate-500 bg-transparent";
+        });
+        updateCurrencyLabels();
+        calculateBudget();
+      }
+    }
+
+    // UI 동기화
+    function updateCurrencySelectionUI() {
+      // iOS 스타일 세그먼트 버튼 선택 상태 전환
+      document.querySelectorAll('.currency-btn').forEach(btn => {
+        btn.className = "currency-btn flex-1 py-1 text-xs font-bold rounded-md transition text-slate-500 bg-transparent";
+      });
+
+      let targetBtn = null;
+      if (state.currencyCode === 'JPY') targetBtn = document.getElementById('btn-jpy');
+      else if (state.currencyCode === 'USD') targetBtn = document.getElementById('btn-usd');
+      else if (state.currencyCode === 'EUR') targetBtn = document.getElementById('btn-eur');
+      else if (state.currencyCode === 'CNY') targetBtn = document.getElementById('btn-cny');
+
+      if (targetBtn) {
+        targetBtn.className = "currency-btn flex-1 py-1 text-xs font-bold rounded-md transition text-slate-900 bg-white shadow-sm";
+      } else {
+        document.getElementById('customCurrency').value = state.currencyName;
+      }
+      updateCurrencyLabels();
+    }
+
+    function updateCurrencyLabels() {
+      document.querySelectorAll('.currency-label').forEach(el => {
+        el.innerText = state.currencyName;
+      });
+      // 지출 폼 화폐 레이블 업데이트
+      const isKrw = state.currentExpenseCurrency === 'KRW';
+      document.getElementById('expenseCurrencyLabel').innerText = isKrw ? '원' : state.currencyName;
+    }
+
+    // --- 지출 화폐 및 카테고리 설정 ---
+    function setExpenseCurrency(type) {
+      state.currentExpenseCurrency = type;
+      const krwBtn = document.getElementById('exp-krw-btn');
+      const foreignBtn = document.getElementById('exp-foreign-btn');
+      
+      if(type === 'KRW') {
+        krwBtn.className = "flex-1 py-1 text-xs font-bold rounded-md transition text-slate-900 bg-white shadow-sm";
+        foreignBtn.className = "flex-1 py-1 text-xs font-bold rounded-md transition text-slate-500 bg-transparent";
+        document.getElementById('expenseCurrencyLabel').innerText = '원';
+      } else {
+        krwBtn.className = "flex-1 py-1 text-xs font-bold rounded-md transition text-slate-500 bg-transparent";
+        foreignBtn.className = "flex-1 py-1 text-xs font-bold rounded-md transition text-slate-900 bg-white shadow-sm";
+        document.getElementById('expenseCurrencyLabel').innerText = state.currencyName;
+      }
+    }
+
+    function setCategory(cat) {
+      state.currentCategory = cat;
+      const buttons = document.querySelectorAll('#categoryGroup .cat-btn');
+      buttons.forEach(btn => {
+        if(btn.innerText === cat) {
+          btn.className = "cat-btn py-1.5 text-xs rounded-lg font-bold text-[#007aff] bg-[#007aff]/10 transition duration-200";
+        } else {
+          btn.className = "cat-btn py-1.5 text-xs rounded-lg font-semibold text-slate-600 bg-slate-100 transition duration-200";
+        }
+      });
+    }
+
+    // --- 입력 값 리스너 등록 ---
+    const inputs = ['dailyAllowance', 'allowanceRatio', 'exchangeRate', 'tripDays'];
+    inputs.forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        state[id] = parseFloat(document.getElementById(id).value) || 0;
+        calculateBudget();
+      });
+    });
+
+    // --- 화폐 포맷 헬퍼 ---
+    function formatNum(value, isKrw = false) {
+      if (isNaN(value)) return '0';
+      
+      if (isKrw) {
+        return Math.round(value).toLocaleString('ko-KR');
+      }
+      
+      if (state.currencyCode === 'JPY' || state.currencyName === '엔') {
+        return Math.round(value).toLocaleString('ko-KR');
+      }
+      
+      return value.toLocaleString('ko-KR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    // --- 메인 예산/지출 계산 로직 ---
+    function calculateBudget() {
+      const adjustedDailyForeign = state.dailyAllowance * (state.allowanceRatio / 100);
+      const adjustedDailyKRW = adjustedDailyForeign * state.exchangeRate;
+
+      document.getElementById('summaryDailyForeign').innerText = formatNum(adjustedDailyForeign);
+      document.getElementById('summaryDailyKRW').innerText = formatNum(adjustedDailyKRW, true);
+
+      const totalBudgetForeign = adjustedDailyForeign * state.tripDays;
+      const totalBudgetKRW = totalBudgetForeign * state.exchangeRate;
+
+      document.getElementById('totalBudgetForeign').innerText = formatNum(totalBudgetForeign);
+      document.getElementById('totalBudgetKRW').innerText = formatNum(totalBudgetKRW, true);
+
+      let totalSpentKRW = 0;
+      let totalSpentForeign = 0;
+
+      state.expenses.forEach(exp => {
+        if (exp.currencyType === 'KRW') {
+          totalSpentKRW += exp.amount;
+          totalSpentForeign += state.exchangeRate > 0 ? (exp.amount / state.exchangeRate) : 0;
+        } else {
+          totalSpentForeign += exp.amount;
+          totalSpentKRW += exp.amount * state.exchangeRate;
+        }
+      });
+
+      document.getElementById('totalSpentForeign').innerText = formatNum(totalSpentForeign);
+      document.getElementById('totalSpentKRW').innerText = formatNum(totalSpentKRW, true);
+
+      const remainingForeign = totalBudgetForeign - totalSpentForeign;
+      const remainingKRW = totalBudgetKRW - totalSpentKRW;
+
+      document.getElementById('totalRemainingForeign').innerText = formatNum(remainingForeign);
+      document.getElementById('totalRemainingKRW').innerText = formatNum(remainingKRW, true);
+
+      let remainingPercent = 100;
+      if (totalBudgetKRW > 0) {
+        remainingPercent = Math.max(0, Math.round((remainingKRW / totalBudgetKRW) * 100));
+      } else if (totalBudgetKRW === 0 && totalSpentKRW > 0) {
+        remainingPercent = 0;
+      }
+
+      document.getElementById('remainingPercent').innerText = `${remainingPercent}%`;
+      
+      const progressBar = document.getElementById('remainingProgressBar');
+      progressBar.style.width = `${remainingPercent}%`;
+
+      if (remainingPercent > 50) {
+        progressBar.className = "bg-[#34c759] h-full rounded-full transition-all duration-500";
+      } else if (remainingPercent > 20) {
+        progressBar.className = "bg-[#ff9500] h-full rounded-full transition-all duration-500";
+      } else {
+        progressBar.className = "bg-[#ff3b30] h-full rounded-full transition-all duration-500";
+      }
+
+      saveState();
+    }
+
+    // --- 지연 방지 패치 ---
+    async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
+      try {
+        const response = await fetch(url, options);
+        if (!response.ok) throw new Error('네트워크 응답 상태 오류');
+        return await response.json();
+      } catch (error) {
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return fetchWithRetry(url, options, retries - 1, delay * 2);
+        }
+        throw error;
+      }
+    }
+
+    // --- 3중 안전 실시간 환율 연동 (Naver 1순위) ---
+    async function autoFetchRate() {
+      const btn = document.getElementById('btnFetchRate');
+      const originalHTML = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `
+        <svg class="w-2.5 h-2.5 animate-spin text-[#007aff]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      `;
+
+      const currencyCode = state.currencyCode;
+      const currencyName = state.currencyName;
+
+      // [1순위] 네이버 환율 고속 크롤링 (allorigins 프록시 활용)
+      try {
+        const naverUrl = "https://finance.naver.com/marketindex/exchangeList.naver";
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(naverUrl)}`;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000); // 4초 제한
+        
+        const response = await fetch(proxyUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) throw new Error("네이버 환율 로드 불가");
+        const json = await response.json();
+        const html = json.contents;
+
+        const regex = /<td class="tit">[\s\S]*?>(.*?)<\/a>[\s\S]*?<td class="sale">([\d,.]+)<\/td>/g;
+        let match;
+        const rates = {};
+        while ((match = regex.exec(html)) !== null) {
+          const name = match[1].trim();
+          const rate = parseFloat(match[2].replace(/,/g, ''));
+          rates[name] = rate;
+        }
+
+        const keys = Object.keys(rates);
+        let targetKey = keys.find(k => k.toUpperCase().includes(currencyCode.toUpperCase()));
+        if (!targetKey && currencyName) {
+          targetKey = keys.find(k => k.includes(currencyName));
+        }
+
+        if (targetKey) {
+          let rate = rates[targetKey];
+          if (targetKey.includes("(100")) {
+            rate = rate / 100;
+          }
+
+          state.exchangeRate = rate;
+          document.getElementById('exchangeRate').value = rate;
+          calculateBudget();
+          showToast(`네이버 환율 기준 (${rate}원) 연동 완료!`);
+          
+          btn.disabled = false;
+          btn.innerHTML = originalHTML;
+          return;
+        }
+        throw new Error("대상 통화 없음");
+      } catch (naverErr) {
+        console.warn("네이버 환율 조회 실패, 예비 API 전환:", naverErr);
+      }
+
+      // [2순위] 글로벌 오픈 API 백업
+      try {
+        const fallbackUrl = `https://open.er-api.com/v6/latest/KRW`;
+        const response = await fetch(fallbackUrl);
+        if (response.ok) {
+          const data = await response.json();
+          const code = currencyCode === 'CUSTOM' ? 'USD' : currencyCode;
+          if (data.rates && data.rates[code]) {
+            let rate = 1 / data.rates[code];
+            state.exchangeRate = parseFloat(rate.toFixed(4));
+            document.getElementById('exchangeRate').value = state.exchangeRate;
+            calculateBudget();
+            showToast(`실시간 글로벌 환율 (${state.exchangeRate}원) 연동 완료!`);
+            
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            return;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("예비 API 조회 실패, Gemini 검색 전환:", apiErr);
+      }
+
+      // [3순위] Gemini AI 환율 검색 백업
+      const apiKey = ""; 
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+      const systemPrompt = "You are an assistant returning exchange rates to South Korean Won (KRW). Always output ONLY a clean single numeric float representing the rate of 1 unit of foreign currency to South Korean Won (KRW). For example, if USD to KRW is 1350.5, return 1350.5. If CNY to KRW is 185.3, return 185.3. For JPY, we quote per 1 JPY, not 100 JPY. If 100 JPY is 925 KRW, return 9.25. Absolutely NO symbols, currency codes, or other words.";
+      const userQuery = `Find and return today's current live exchange rate for ${currencyCode} to KRW. Return ONLY the numeric value of 1 ${currencyCode} in KRW.`;
+
+      const payload = {
+        contents: [{ parts: [{ text: userQuery }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        tools: [{ "google_search": {} }]
+      };
+
+      try {
+        const data = await fetchWithRetry(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }, 2, 1000);
+
+        const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const match = aiResponse.match(/[0-9.]+/);
+
+        if (match) {
+          const rate = parseFloat(match[0]);
+          if (!isNaN(rate) && rate > 0) {
+            state.exchangeRate = rate;
+            document.getElementById('exchangeRate').value = rate;
+            calculateBudget();
+            showToast(`검색 기반 실시간 환율 (${rate}원) 동기화 완료!`);
+          } else {
+            throw new Error("올바르지 않은 형식");
+          }
+        } else {
+          throw new Error("결과 없음");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("환율 동기화 실패. 수동 입력을 진행해 주세요.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+      }
+    }
+
+    // --- 지출 관리 액션 ---
+    function addExpense() {
+      const descInput = document.getElementById('expenseDesc');
+      const amountInput = document.getElementById('expenseAmount');
+      const dateInput = document.getElementById('expenseDate');
+
+      const desc = descInput.value.trim() || `${state.currentCategory} 지출`;
+      const amount = parseFloat(amountInput.value);
+      const date = dateInput.value || new Date().toISOString().split('T')[0];
+
+      if (isNaN(amount) || amount <= 0) {
+        showToast("금액을 정확하게 입력해 주세요.");
+        return;
+      }
+
+      const id = Date.now().toString();
+      const newExpense = {
+        id,
+        date, // 날짜 속성 추가 완료
+        category: state.currentCategory,
+        desc,
+        currencyType: state.currentExpenseCurrency,
+        amount
+      };
+
+      state.expenses.unshift(newExpense);
+      
+      descInput.value = '';
+      amountInput.value = '';
+      setDefaultDate(); // 오늘 날짜로 재지정
+      
+      showToast("지출 내역을 성공적으로 추가했습니다!");
+      updateUI();
+    }
+
+    function deleteExpense(id) {
+      state.expenses = state.expenses.filter(exp => exp.id !== id);
+      showToast("지출 내역을 삭제했습니다.");
+      updateUI();
+    }
+
+    // --- iOS 스타일 하단 액션 시트 제어 ---
+    function showConfirmModal() {
+      return new Promise((resolve) => {
+        confirmResolve = resolve;
+        const modal = document.getElementById('confirmModal');
+        const content = document.getElementById('confirmModalContent');
+        modal.classList.remove('hidden');
+        setTimeout(() => {
+          content.classList.remove('translate-y-20', 'opacity-0');
+          content.classList.add('translate-y-0', 'opacity-100');
+        }, 10);
+      });
+    }
+
+    function closeConfirmModal(confirmed) {
+      const modal = document.getElementById('confirmModal');
+      const content = document.getElementById('confirmModalContent');
+      content.classList.remove('translate-y-0', 'opacity-100');
+      content.classList.add('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        if (confirmResolve) confirmResolve(confirmed);
+      }, 300);
+    }
+
+    async function clearAllExpenses() {
+      if (state.expenses.length === 0) return;
+      
+      const confirmed = await showConfirmModal();
+      if (confirmed) {
+        state.expenses = [];
+        showToast("모든 지출 내역이 초기화되었습니다.");
+        updateUI();
+      }
+    }
+
+    // --- 카테고리별 이모지 헬퍼 ---
+    function getCategoryEmoji(cat) {
+      switch (cat) {
+        case '식비': return '🍱';
+        case '교통': return '🚕';
+        case '숙박': return '🏨';
+        case '쇼핑': return '🛒';
+        default: return '💵';
+      }
+    }
+
+    // --- UI 그리기 및 새로고침 ---
+    function updateUI() {
+      calculateBudget();
+      updateCurrencyLabels();
+      updateCurrencySelectionUI();
+
+      setExpenseCurrency(state.currentExpenseCurrency);
+      setCategory(state.currentCategory);
+
+      const listContainer = document.getElementById('expenseList');
+      const emptyMessage = document.getElementById('emptyMessage');
+
+      if (state.expenses.length === 0) {
+        emptyMessage.classList.remove('hidden');
+        const items = listContainer.querySelectorAll('.expense-item');
+        items.forEach(item => item.remove());
+        return;
+      }
+
+      emptyMessage.classList.add('hidden');
+      
+      const items = listContainer.querySelectorAll('.expense-item');
+      items.forEach(item => item.remove());
+
+      // 1. 날짜 순으로 완벽하게 내림차순 정렬 (날짜가 같으면 최신 생성 순 정렬)
+      const sortedExpenses = [...state.expenses].sort((a, b) => {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) {
+          return dateB.localeCompare(dateA); // 최신 날짜 우선
+        }
+        return b.id.localeCompare(a.id); // 최신 등록 아이템 우선
+      });
+
+      sortedExpenses.forEach(exp => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = "expense-item py-3 flex justify-between items-center transition-all";
+        
+        let primaryPrice = '';
+        let secondaryPrice = '';
+
+        if(exp.currencyType === 'KRW') {
+          primaryPrice = `${formatNum(exp.amount, true)} 원`;
+          const foreignVal = state.exchangeRate > 0 ? (exp.amount / state.exchangeRate) : 0;
+          secondaryPrice = `약 ${formatNum(foreignVal)} ${state.currencyName}`;
+        } else {
+          primaryPrice = `${formatNum(exp.amount)} ${state.currencyName}`;
+          const krwVal = exp.amount * state.exchangeRate;
+          secondaryPrice = `약 ${formatNum(krwVal, true)} 원`;
+        }
+
+        // 구 버전 데이터 호환 복구 (date 정보가 없을 시 ID에서 타임스탬프 추출)
+        let displayDate = '';
+        if (exp.date) {
+          displayDate = exp.date.replace(/-/g, '.');
+        } else if (exp.id) {
+          const extractedDate = new Date(parseInt(exp.id));
+          if (!isNaN(extractedDate.getTime())) {
+            const y = extractedDate.getFullYear();
+            const m = String(extractedDate.getMonth() + 1).padStart(2, '0');
+            const d = String(extractedDate.getDate()).padStart(2, '0');
+            displayDate = `${y}.${m}.${d}`;
+          }
+        }
+
+        itemDiv.innerHTML = `
+          <div class="flex items-center gap-3">
+            <span class="text-xl bg-slate-100 w-9 h-9 rounded-full flex items-center justify-center">${getCategoryEmoji(exp.category)}</span>
+            <div class="text-left">
+              <p class="text-sm font-semibold text-slate-800 leading-tight">${exp.desc}</p>
+              <div class="flex items-center gap-1 mt-1">
+                <span class="text-[9px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-md">${exp.category}</span>
+                <span class="text-[9px] bg-slate-100 text-slate-400 font-semibold px-1.5 py-0.5 rounded-md">${displayDate}</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <p class="text-sm font-bold text-slate-900 leading-tight">${primaryPrice}</p>
+              <p class="text-[10px] text-slate-400 font-medium">${secondaryPrice}</p>
+            </div>
+            <button onclick="deleteExpense('${exp.id}')" class="p-1 text-slate-300 hover:text-[#ff3b30] active:scale-90 transition">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              </svg>
+            </button>
+          </div>
+        `;
+        listContainer.appendChild(itemDiv);
+      });
+    }
+
+    // --- 데이터 백업 및 복구 ---
+    function exportData() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state, null, 2));
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `출장비정산_${new Date().toISOString().slice(0,10)}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      showToast("데이터 저장이 완료되었습니다.");
+    }
+
+    function triggerImport() {
+      document.getElementById('importFile').click();
+    }
+
+    function importData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (parsed && typeof parsed === 'object') {
+            state = { ...state, ...parsed };
+            
+            document.getElementById('dailyAllowance').value = state.dailyAllowance;
+            document.getElementById('allowanceRatio').value = state.allowanceRatio;
+            document.getElementById('exchangeRate').value = state.exchangeRate;
+            document.getElementById('tripDays').value = state.tripDays;
+
+            updateCurrencySelectionUI();
+            updateUI();
+            showToast("데이터 복구가 완료되었습니다!");
+          }
+        } catch (err) {
+          showToast("올바른 백업 파일이 아닙니다.");
+        }
+      };
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
