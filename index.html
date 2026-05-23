@@ -190,7 +190,7 @@
         </div>
       </div>
 
-      <!-- 사용 날짜 & 사용 내역 (반응형 여유로운 배치 적용) -->
+      <!-- 사용 날짜 & 사용 내역 -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div class="flex flex-col gap-2">
           <label class="text-sm font-semibold text-slate-500">사용 날짜</label>
@@ -198,7 +198,8 @@
         </div>
         <div class="flex flex-col gap-2">
           <label class="text-sm font-semibold text-slate-500">사용 내역</label>
-          <input type="text" id="input-exp-desc" placeholder="예: 택시비" class="w-full bg-[#f8fafc] border border-slate-200 rounded-2xl py-3.5 px-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800">
+          <!-- 플레이스홀더 문구를 사용자가 쉽게 이해할 수 있도록 보완 -->
+          <input type="text" id="input-exp-desc" placeholder="예: 택시비 (미입력 시 카테고리명)" class="w-full bg-[#f8fafc] border border-slate-200 rounded-2xl py-3.5 px-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800">
         </div>
       </div>
 
@@ -273,7 +274,7 @@
       baseAllowance: 55000,
       payoutRatio: 90,
       exchangeRate: 9.2928,
-      tripDuration: 1, // 초기 일수를 1일로 변경하여 최초 로딩 시 총 출장 예산과 적용 일당이 동기화되도록 수정
+      tripDuration: 1, 
       expenseCurrencyMode: 'KRW', // 'KRW' or 'FOREIGN'
       selectedCategory: '식비',
       expenses: []
@@ -576,17 +577,19 @@
     // 지출 내역 등록
     function addExpense() {
       const dateVal = document.getElementById('input-exp-date').value;
-      const descVal = document.getElementById('input-exp-desc').value.trim();
+      let descVal = document.getElementById('input-exp-desc').value.trim();
       const amountVal = parseFloat(document.getElementById('input-exp-amount').value) || 0;
 
       if (!dateVal) {
         showAlert('등록 오류', '사용 날짜를 선택해주세요.');
         return;
       }
+      
+      // 사용 내역을 입력하지 않은 경우 현재 선택된 카테고리 항목명으로 자동 설정
       if (!descVal) {
-        showAlert('등록 오류', '사용 내역을 구체적으로 적어주세요. (예: 점심식사, 택시비)');
-        return;
+        descVal = state.selectedCategory;
       }
+      
       if (amountVal <= 0) {
         showAlert('등록 오류', '지출 금액은 0보다 커야 등록할 수 있습니다.');
         return;
